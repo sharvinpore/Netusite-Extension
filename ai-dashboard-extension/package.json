@@ -1,0 +1,21 @@
+{
+  "name": "ai-dashboard-extension",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "build": "vite build && node postbuild.js"
+  },
+  
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@mlc-ai/web-llm": "^0.2.81",
+    "chart.js": "^4.5.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "vite": "^7.3.1"
+  }
+}
