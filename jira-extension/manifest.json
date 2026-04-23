@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Jira My Tasks",
-  "version": "1.2.0",
-  "description": "View your Jira tasks organized by project, right from your browser.",
+  "version": "2.0.0",
+  "description": "View, search, and manage Jira tasks for your entire team — browse all projects, see unassigned tasks, log time, and open tickets right from your browser.",
   "permissions": ["storage"],
   "host_permissions": ["https://*.atlassian.net/*"],
   "background": { "service_worker": "background.js" },

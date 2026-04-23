@@ -25,6 +25,12 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
       .catch(function(err) { sendResponse({ ok: false, error: err.message }); });
     return true;
   }
+  if (request.type === 'JIRA_FETCH_UNASSIGNED') {
+    fetchUnassignedTasks(request.domain, request.auth, request.projectKey)
+      .then(function(data) { sendResponse({ ok: true, data: data }); })
+      .catch(function(err) { sendResponse({ ok: false, error: err.message }); });
+    return true;
+  }
 });
 
 // ── HTTP helpers ───────────────────────────────────────────────────────────
@@ -103,10 +109,20 @@ async function fetchAllTasks(domain, auth) {
     projectMap[t.projectKey].count++;
   });
 
-  return {
-    tasks: tasks,
-    projects: Object.values(projectMap).sort(function(a, b) { return b.count - a.count; }),
-  };
+  // Fetch all accessible projects and merge in any not already in the map
+  try {
+    var allProjects = await jiraGet(base + '/rest/api/3/project/search?maxResults=100&orderBy=name', auth);
+    (allProjects.values || []).forEach(function(p) {
+      if (!projectMap[p.key]) projectMap[p.key] = { key: p.key, name: p.name, count: 0 };
+    });
+  } catch(_) {}
+
+  var projects = Object.values(projectMap).sort(function(a, b) {
+    if (b.count !== a.count) return b.count - a.count;
+    return a.name.localeCompare(b.name);
+  });
+
+  return { tasks: tasks, projects: projects };
 }
 
 // ── Fetch ticket detail ────────────────────────────────────────────────────
@@ -186,6 +202,32 @@ function extractText(node) {
   if (node.type === 'text') return node.text || '';
   if (node.content) return node.content.map(extractText).join('');
   return '';
+}
+
+// ── Fetch unassigned tasks for a project ──────────────────────────────────
+async function fetchUnassignedTasks(domain, auth, projectKey) {
+  var base = 'https://' + domain;
+  var jql = 'project = "' + projectKey + '" AND assignee is EMPTY AND statusCategory != Done ORDER BY updated DESC';
+  var url = base + '/rest/api/3/search/jql'
+    + '?jql=' + encodeURIComponent(jql)
+    + '&maxResults=50'
+    + '&fields=summary,status,priority,issuetype,project';
+
+  var data = await jiraGet(url, auth);
+  return (data.issues || []).map(function(issue) {
+    return {
+      key: issue.key,
+      summary: issue.fields.summary || '(no title)',
+      status: (issue.fields.status && issue.fields.status.name) || 'Unknown',
+      statusCategory: (issue.fields.status && issue.fields.status.statusCategory && issue.fields.status.statusCategory.key) || 'new',
+      priority: (issue.fields.priority && issue.fields.priority.name) || 'Medium',
+      type: (issue.fields.issuetype && issue.fields.issuetype.name) || 'Task',
+      projectKey: (issue.fields.project && issue.fields.project.key) || projectKey,
+      projectName: (issue.fields.project && issue.fields.project.name) || 'Unknown',
+      url: base + '/browse/' + issue.key,
+      unassigned: true,
+    };
+  });
 }
 
 // ── Add worklog ────────────────────────────────────────────────────────────

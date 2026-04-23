@@ -1,5 +1,4 @@
 # Netusite-Extension
-# Netusite-Extension
 
 This repository contains two Chrome extensions:
 

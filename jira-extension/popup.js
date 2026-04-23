@@ -2,7 +2,7 @@
 var state = {
   config: null, projects: [], tasks: [],
   selectedProject: null, activeFilter: 'all', lastSync: null,
-  currentTicket: null,
+  currentTicket: null, unassignedTasks: {}, pinnedProjects: [],
 };
 
 // ── DOM ────────────────────────────────────────────────────────────────────
@@ -114,27 +114,59 @@ function renderSetup(errorMsg) {
   $('saveBtn').addEventListener('click', saveConfig);
 }
 
+// ── Pin ────────────────────────────────────────────────────────────────────
+function togglePin(projectKey) {
+  var idx = state.pinnedProjects.indexOf(projectKey);
+  if (idx === -1) state.pinnedProjects.push(projectKey);
+  else state.pinnedProjects.splice(idx, 1);
+  chrome.storage.local.set({ pinnedProjects: state.pinnedProjects });
+  renderProjects();
+}
+
 // ── Render: Projects ───────────────────────────────────────────────────────
 function renderProjects(errorMsg) {
   showBreadcrumb(null); showFilterBar(false);
   var total = state.projects.reduce(function(a,p){ return a+p.count; }, 0);
-  setStatus(!errorMsg, errorMsg ? 'Offline \u2014 cached' : total + ' task' + (total!==1?'s':'') + ' assigned', state.lastSync);
+  setStatus(!errorMsg, errorMsg ? 'Offline — cached' : total + ' task' + (total!==1?'s':'') + ' assigned', state.lastSync);
   var html = errorMsg ? '<div class="error-banner">&#9888; ' + esc(errorMsg) + '</div>' : '';
   if (!state.projects.length) {
     html += '<div class="empty-state"><div class="empty-icon">&#127881;</div><div class="empty-text">No assigned tasks.<br>You\'re all caught up!</div></div>';
     content.innerHTML = html; return;
   }
-  var colors = [['#4f7cff','#1a2040'],['#7c5cff','#1e1640'],['#3ecf8e','#0d2820'],['#f5a623','#2a1e0a'],['#ff5c5c','#2a0f0f'],['#00d4ff','#001a2a'],['#ff7eb3','#2a0f1a'],['#a8ff3e','#1a2a0a']];
-  html += '<div class="section-label">Your Projects</div>';
-  state.projects.forEach(function(p, i) {
-    var fg=colors[i%colors.length][0], bg=colors[i%colors.length][1];
+  var colors = [['#E56B1E','#fef0e6'],['#EC8D54','#fef5ee'],['#1e8a5a','#e6f5ee'],['#b45309','#fef3e2'],['#c0392b','#fdecea'],['#0891b2','#e0f5fa'],['#7c3aed','#f0ebff'],['#059669','#e6f5ef']];
+  var pinned = state.projects.filter(function(p){ return state.pinnedProjects.indexOf(p.key) !== -1; });
+  var myProjects = state.projects.filter(function(p){ return p.count > 0 && state.pinnedProjects.indexOf(p.key) === -1; });
+  var otherProjects = state.projects.filter(function(p){ return p.count === 0 && state.pinnedProjects.indexOf(p.key) === -1; });
+
+  function projectCard(p, i) {
+    var fg = colors[i % colors.length][0], bg = colors[i % colors.length][1];
     var initials = p.name.split(' ').map(function(w){ return w[0]||''; }).join('').slice(0,2).toUpperCase();
-    html += '<div class="project-card" data-key="' + esc(p.key) + '">' +
+    var countClass = p.count === 0 ? 'project-count project-count-empty' : 'project-count';
+    var isPinned = state.pinnedProjects.indexOf(p.key) !== -1;
+    return '<div class="project-card" data-key="' + esc(p.key) + '">' +
       '<div class="project-avatar" style="background:' + bg + ';color:' + fg + ';border:1.5px solid ' + fg + '30">' + initials + '</div>' +
       '<div class="project-info"><div class="project-name">' + esc(p.name) + '</div><div class="project-meta">' + esc(p.key) + '</div></div>' +
-      '<div class="project-count">' + p.count + '</div><div class="chevron">&#8250;</div></div>';
-  });
+      '<div class="' + countClass + '">' + p.count + '</div>' +
+      '<button class="pin-btn' + (isPinned ? ' pinned' : '') + '" data-key="' + esc(p.key) + '" title="' + (isPinned ? 'Unpin' : 'Pin to top') + '">&#9650;</button>' +
+      '<div class="chevron">&#8250;</div></div>';
+  }
+
+  if (pinned.length) {
+    html += '<div class="section-label">Pinned</div>';
+    pinned.forEach(function(p, i) { html += projectCard(p, i); });
+  }
+  if (myProjects.length) {
+    html += '<div class="section-label"' + (pinned.length ? ' style="margin-top:4px"' : '') + '>Your Projects</div>';
+    myProjects.forEach(function(p, i) { html += projectCard(p, pinned.length + i); });
+  }
+  if (otherProjects.length) {
+    html += '<div class="section-label" style="margin-top:4px">All Projects</div>';
+    otherProjects.forEach(function(p, i) { html += projectCard(p, pinned.length + myProjects.length + i); });
+  }
   content.innerHTML = html;
+  content.querySelectorAll('.pin-btn').forEach(function(btn) {
+    btn.addEventListener('click', function(e) { e.stopPropagation(); togglePin(btn.dataset.key); });
+  });
   content.querySelectorAll('.project-card').forEach(function(card) {
     card.addEventListener('click', function() {
       var project = state.projects.find(function(p){ return p.key === card.dataset.key; });
@@ -146,26 +178,45 @@ function renderProjects(errorMsg) {
 // ── Render: Tasks ──────────────────────────────────────────────────────────
 function renderTasks(project) {
   showBreadcrumb(project.name, null); showFilterBar(true);
-  var allTasks = state.tasks.filter(function(t){ return t.projectKey === project.key; });
+  var assignedTasks = state.tasks.filter(function(t){ return t.projectKey === project.key; });
+  var unassigned = state.unassignedTasks[project.key] || [];
+  var allTasks = assignedTasks.concat(unassigned);
   updateFilterCounts(allTasks);
   var tasks = allTasks.filter(function(t){ return matchesFilter(t, state.activeFilter); });
-  setStatus(true, tasks.length + ' task' + (tasks.length!==1?'s':'') + ' \u2014 ' + project.key);
-  if (!tasks.length) { content.innerHTML = '<div class="no-tasks">No tasks match this filter.</div>'; return; }
+  var loadingUnassigned = !(project.key in state.unassignedTasks);
+  setStatus(true, tasks.length + ' task' + (tasks.length!==1?'s':'') + ' — ' + project.key);
   var statusMap = {'To Do':'todo','In Progress':'inprogress','Done':'done','In Review':'review','Review':'review','Closed':'done','Resolved':'done'};
   var priorityMap = {'High':'high','Highest':'high','Medium':'medium','Low':'low','Lowest':'low'};
-  var html = '<div class="section-label">' + esc(project.name) + ' &mdash; ' + tasks.length + ' task' + (tasks.length!==1?'s':'') + '</div>';
-  tasks.forEach(function(t) {
-    var sc = statusMap[t.status]||'todo', pc = priorityMap[t.priority]||'medium';
-    html += '<div class="task-item" data-key="' + esc(t.key) + '">' +
-      '<div class="task-top"><span class="task-key">' + esc(t.key) + '</span><div class="task-title">' + esc(t.summary) + '</div></div>' +
-      '<div class="task-bottom"><span class="badge badge-status-' + sc + '">' + esc(t.status) + '</span>' +
-      '<span class="badge badge-priority-' + pc + '">&#8593; ' + esc(t.priority) + '</span>' +
-      '<span class="badge badge-type">' + esc(t.type) + '</span></div></div>';
-  });
+  var html = '<div class="section-label">' + esc(project.name) + ' &mdash; ' + tasks.length + ' task' + (tasks.length!==1?'s':'') +
+    (loadingUnassigned ? ' <span style="font-size:9px;color:var(--muted)">(loading unassigned…)</span>' : '') + '</div>';
+  if (!tasks.length && !loadingUnassigned) {
+    html += '<div class="no-tasks">No tasks match this filter.</div>';
+  } else {
+    tasks.forEach(function(t) {
+      var sc = statusMap[t.status]||'todo', pc = priorityMap[t.priority]||'medium';
+      html += '<div class="task-item" data-key="' + esc(t.key) + '">' +
+        '<div class="task-top"><span class="task-key">' + esc(t.key) + '</span><div class="task-title">' + esc(t.summary) + '</div></div>' +
+        '<div class="task-bottom"><span class="badge badge-status-' + sc + '">' + esc(t.status) + '</span>' +
+        '<span class="badge badge-priority-' + pc + '">&#8593; ' + esc(t.priority) + '</span>' +
+        '<span class="badge badge-type">' + esc(t.type) + '</span>' +
+        (t.unassigned ? '<span class="badge badge-unassigned">Unassigned</span>' : '') +
+        '</div></div>';
+    });
+  }
   content.innerHTML = html;
   content.querySelectorAll('.task-item').forEach(function(item) {
     item.addEventListener('click', function() { renderTicketDetail(item.dataset.key); });
   });
+
+  if (loadingUnassigned) {
+    state.unassignedTasks[project.key] = null;
+    bgSend({ type: 'JIRA_FETCH_UNASSIGNED', domain: getDomain(), auth: getAuth(), projectKey: project.key })
+      .then(function(tasks) {
+        state.unassignedTasks[project.key] = tasks;
+        if (state.selectedProject && state.selectedProject.key === project.key) renderTasks(project);
+      })
+      .catch(function() { state.unassignedTasks[project.key] = []; });
+  }
 }
 
 // ── Render: Ticket Detail ──────────────────────────────────────────────────
@@ -188,7 +239,7 @@ function renderTicketDetail(issueKey) {
 }
 
 function renderTicketData(t, worklogs) {
-  setStatus(true, t.key + ' \u2014 ' + t.project);
+  setStatus(true, t.key + ' — ' + t.project);
   var statusMap = {'To Do':'todo','In Progress':'inprogress','Done':'done','In Review':'review','Review':'review','Closed':'done','Resolved':'done'};
   var priorityMap = {'High':'high','Highest':'high','Medium':'medium','Low':'low','Lowest':'low'};
   var sc = statusMap[t.status]||'todo', pc = priorityMap[t.priority]||'medium';
@@ -224,7 +275,6 @@ function renderTicketData(t, worklogs) {
       '<span>Estimated</span><span>' + esc(tt.originalEstimate || 'Not set') + '</span></div>' +
       '<div class="time-track-row"><span>Logged</span><span style="color:var(--success)">' + esc(tt.timeSpent || '0m') + '</span></div>' +
       (tt.remainingEstimate ? '<div class="time-track-row"><span>Remaining</span><span style="color:var(--warn)">' + esc(tt.remainingEstimate) + '</span></div>' : '');
-    // Progress bar
     if (tt.originalEstimateSeconds && tt.timeSpentSeconds) {
       var pct = Math.min(100, Math.round((tt.timeSpentSeconds / tt.originalEstimateSeconds) * 100));
       html += '<div class="progress-bar"><div class="progress-fill" style="width:' + pct + '%"></div></div>';
@@ -296,7 +346,6 @@ function detailField(label, value) {
 
 // ── Worklog Modal ──────────────────────────────────────────────────────────
 function openWorklogModal(issueKey) {
-  // Build today's date in Jira format: 2024-06-15T09:00:00.000+0000
   var now = new Date();
   var pad = function(n){ return String(n).padStart(2,'0'); };
   var todayVal = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
@@ -326,7 +375,7 @@ function openWorklogModal(issueKey) {
           '<input class="modal-input" id="wl-date" type="date" value="' + todayVal + '" />' +
         '</div>' +
         '<div>' +
-          '<div class="modal-field-label">Comment (optional)</div>' +
+          '<div class="modal-field-label">Work Description *</div>' +
           '<input class="modal-input" id="wl-comment" placeholder="What did you work on?" />' +
         '</div>' +
       '</div>' +
@@ -339,7 +388,6 @@ function openWorklogModal(issueKey) {
 
   document.getElementById('app').appendChild(overlay);
 
-  // Preset buttons
   overlay.querySelectorAll('.time-preset').forEach(function(btn) {
     btn.addEventListener('click', function() {
       $('wl-time').value = btn.dataset.val;
@@ -358,8 +406,8 @@ function openWorklogModal(issueKey) {
 
     if (!timeSpent) { errEl.textContent = 'Time spent is required.'; return; }
     if (!isValidTime(timeSpent)) { errEl.textContent = 'Invalid format. Use: 2h, 30m, 1d, 1h 30m'; return; }
+    if (!comment) { errEl.textContent = 'Work description is required.'; return; }
 
-    // Convert date to Jira started format
     var started = dateVal ? dateVal + 'T09:00:00.000+0000' : new Date().toISOString().replace('Z','+0000').slice(0,23) + '+0000';
 
     var btn = $('wl-submit');
@@ -375,21 +423,19 @@ function openWorklogModal(issueKey) {
       comment: comment,
       started: started,
     }).then(function() {
-      // Show success then reload ticket
       errEl.className = 'modal-success';
-      errEl.textContent = '&#10003; Logged ' + timeSpent + ' successfully!';
+      errEl.textContent = '✓ Logged ' + timeSpent + ' successfully!';
       setTimeout(function() {
         closeWorklogModal();
         renderTicketDetail(issueKey);
       }, 1200);
     }).catch(function(err) {
-      btn.disabled = false; btn.textContent = '&#10003; Log Time';
+      btn.disabled = false; btn.textContent = '✓ Log Time';
       errEl.className = 'modal-error';
       errEl.textContent = err.message;
     });
   });
 
-  // Focus time input
   setTimeout(function() { var el = $('wl-time'); if (el) el.focus(); }, 100);
 }
 
@@ -399,7 +445,6 @@ function closeWorklogModal() {
 }
 
 function isValidTime(str) {
-  // Accept formats: 2h, 30m, 1d, 2h 30m, 1d 4h, etc.
   return /^(\d+[wdhm]\s*)+$/i.test(str.trim());
 }
 
@@ -434,6 +479,7 @@ function loadTasks(config) {
   bgSend({ type: 'JIRA_FETCH_TASKS', domain: domain, auth: auth })
     .then(function(result) {
       state.tasks = result.tasks; state.projects = result.projects;
+      state.unassignedTasks = {};
       state.lastSync = 'Synced ' + new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
       chrome.storage.local.set({ cachedTasks: state.tasks, cachedProjects: state.projects, lastSync: state.lastSync });
       renderProjects();
@@ -467,6 +513,145 @@ function saveConfig() {
   loadTasks(config);
 }
 
+// ── Search ─────────────────────────────────────────────────────────────────
+function openSearch() {
+  $('searchBar').className = 'search-bar visible';
+  setTimeout(function() { $('searchInput').focus(); }, 50);
+}
+
+function closeSearch() {
+  $('searchBar').className = 'search-bar';
+  $('searchInput').value = '';
+}
+
+function toggleSearch() {
+  var visible = $('searchBar').classList.contains('visible');
+  if (visible) {
+    closeSearch();
+    if (state.selectedProject) renderTasks(state.selectedProject);
+    else if (state.config) renderProjects();
+  } else {
+    openSearch();
+  }
+}
+
+$('searchBtn').addEventListener('click', toggleSearch);
+
+$('searchClear').addEventListener('click', function() {
+  $('searchInput').value = '';
+  $('searchInput').focus();
+  if (state.selectedProject) renderTasks(state.selectedProject);
+  else if (state.config) renderProjects();
+});
+
+$('searchInput').addEventListener('input', function() {
+  var q = this.value.trim();
+  if (!q) {
+    if (state.selectedProject) renderTasks(state.selectedProject);
+    else if (state.config) renderProjects();
+    return;
+  }
+  renderSearchResults(q);
+});
+
+$('searchInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    toggleSearch();
+    if (state.selectedProject) renderTasks(state.selectedProject);
+    else if (state.config) renderProjects();
+  }
+  if (e.key === 'Enter') {
+    var q = this.value.trim().toUpperCase();
+    if (/^[A-Z]+-\d+$/.test(q)) { closeSearch(); renderTicketDetail(q); }
+  }
+});
+
+function renderSearchResults(q) {
+  showBreadcrumb(null); showFilterBar(false);
+  var isTicketKey = /^[A-Za-z]+-\d+$/.test(q.trim());
+  var ql = q.toLowerCase();
+
+  var matchedProjects = state.projects.filter(function(p) {
+    return p.name.toLowerCase().indexOf(ql) !== -1 || p.key.toLowerCase().indexOf(ql) !== -1;
+  });
+
+  var matchedTasks = state.tasks.filter(function(t) {
+    return t.key.toLowerCase().indexOf(ql) !== -1 ||
+           t.summary.toLowerCase().indexOf(ql) !== -1 ||
+           t.projectKey.toLowerCase().indexOf(ql) !== -1 ||
+           t.projectName.toLowerCase().indexOf(ql) !== -1;
+  }).slice(0, 20);
+
+  var html = '';
+
+  if (isTicketKey) {
+    var key = q.trim().toUpperCase();
+    html += '<div class="search-jump" id="jumpCard" data-key="' + esc(key) + '">' +
+      '<span class="task-key" style="font-size:11px;padding:2px 7px">' + esc(key) + '</span>' +
+      '<span class="search-jump-label">Open ticket in extension</span>' +
+      '<span style="color:var(--accent);font-size:13px">&#8594;</span></div>';
+  }
+
+  if (matchedProjects.length) {
+    var colors = [['#E56B1E','#fef0e6'],['#EC8D54','#fef5ee'],['#1e8a5a','#e6f5ee'],['#b45309','#fef3e2'],['#c0392b','#fdecea'],['#0891b2','#e0f5fa'],['#7c3aed','#f0ebff'],['#059669','#e6f5ef']];
+    html += '<div class="section-label">Projects</div>';
+    matchedProjects.forEach(function(p) {
+      var i = state.projects.indexOf(p);
+      var fg = colors[i % colors.length][0], bg = colors[i % colors.length][1];
+      var initials = p.name.split(' ').map(function(w){ return w[0]||''; }).join('').slice(0,2).toUpperCase();
+      html += '<div class="project-card" data-key="' + esc(p.key) + '">' +
+        '<div class="project-avatar" style="background:' + bg + ';color:' + fg + ';border:1.5px solid ' + fg + '30">' + initials + '</div>' +
+        '<div class="project-info"><div class="project-name">' + esc(p.name) + '</div><div class="project-meta">' + esc(p.key) + '</div></div>' +
+        '<div class="project-count">' + p.count + '</div><div class="chevron">&#8250;</div></div>';
+    });
+  }
+
+  if (matchedTasks.length) {
+    var statusMap = {'To Do':'todo','In Progress':'inprogress','Done':'done','In Review':'review','Review':'review','Closed':'done','Resolved':'done'};
+    var priorityMap = {'High':'high','Highest':'high','Medium':'medium','Low':'low','Lowest':'low'};
+    html += '<div class="section-label">Tasks (' + matchedTasks.length + (matchedTasks.length === 20 ? '+' : '') + ')</div>';
+    matchedTasks.forEach(function(t) {
+      var sc = statusMap[t.status]||'todo', pc = priorityMap[t.priority]||'medium';
+      html += '<div class="task-item" data-key="' + esc(t.key) + '">' +
+        '<div class="task-top"><span class="task-key">' + esc(t.key) + '</span><div class="task-title">' + esc(t.summary) + '</div></div>' +
+        '<div class="task-bottom">' +
+        '<span class="badge badge-type" style="font-size:9px">' + esc(t.projectKey) + '</span>' +
+        '<span class="badge badge-status-' + sc + '">' + esc(t.status) + '</span>' +
+        '<span class="badge badge-priority-' + pc + '">&#8593; ' + esc(t.priority) + '</span>' +
+        '</div></div>';
+    });
+  }
+
+  if (!isTicketKey && !matchedProjects.length && !matchedTasks.length) {
+    html += '<div class="empty-state"><div class="empty-icon">&#128269;</div>' +
+      '<div class="empty-text">No results for &ldquo;' + esc(q) + '&rdquo;<br>' +
+      '<span style="font-size:11px">Try a ticket key like ABC-123</span></div></div>';
+  }
+
+  content.innerHTML = html;
+
+  var jc = $('jumpCard');
+  if (jc) {
+    jc.addEventListener('click', function() { var k = this.dataset.key; closeSearch(); renderTicketDetail(k); });
+  }
+
+  content.querySelectorAll('.project-card').forEach(function(card) {
+    card.addEventListener('click', function() {
+      var project = state.projects.find(function(p){ return p.key === card.dataset.key; });
+      if (project) { state.selectedProject = project; state.activeFilter = 'all'; closeSearch(); renderTasks(project); }
+    });
+  });
+
+  content.querySelectorAll('.task-item').forEach(function(item) {
+    item.addEventListener('click', function() {
+      var task = state.tasks.find(function(t){ return t.key === item.dataset.key; });
+      if (task) state.selectedProject = state.projects.find(function(p){ return p.key === task.projectKey; }) || state.selectedProject;
+      closeSearch();
+      renderTicketDetail(item.dataset.key);
+    });
+  });
+}
+
 // ── Buttons ────────────────────────────────────────────────────────────────
 ['all','inprogress','todo','done'].forEach(function(f) {
   $('f-' + f).addEventListener('click', function() { setActiveFilter(f); });
@@ -486,11 +671,12 @@ $('refreshBtn').addEventListener('click', function() {
   state.selectedProject = null; loadTasks(state.config);
 });
 
-$('bc-home').addEventListener('click', function() { state.selectedProject = null; state.activeFilter = 'all'; renderProjects(); });
+$('bc-home').addEventListener('click', function() { state.selectedProject = null; state.activeFilter = 'all'; closeSearch(); renderProjects(); });
 $('bc-project').addEventListener('click', function() { if (state.selectedProject) { state.activeFilter = 'all'; renderTasks(state.selectedProject); } });
 
 // ── Boot ───────────────────────────────────────────────────────────────────
-chrome.storage.local.get(['jiraConfig','cachedTasks','cachedProjects','lastSync'], function(result) {
+chrome.storage.local.get(['jiraConfig','cachedTasks','cachedProjects','lastSync','pinnedProjects'], function(result) {
+  state.pinnedProjects = result.pinnedProjects || [];
   if (result.jiraConfig) {
     state.config = result.jiraConfig;
     if (result.cachedProjects && result.cachedProjects.length) {
