@@ -1,8 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "Jira My Tasks",
+  "name": "BoardSide",
+  "short_name": "BoardSide",
   "version": "2.0.0",
-  "description": "View, search, and manage Jira tasks for your entire team — browse all projects, see unassigned tasks, log time, and open tickets right from your browser.",
+  "description": "Browse and manage your Jira tasks across all projects, log time, and search issues — credentials never leave your device.",
+  "minimum_chrome_version": "102",
   "permissions": ["storage"],
   "host_permissions": ["https://*.atlassian.net/*"],
   "background": { "service_worker": "background.js" },
@@ -10,12 +12,14 @@
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
   },
   "icons": {
     "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   }

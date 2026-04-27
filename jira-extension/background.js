@@ -82,14 +82,22 @@ async function fetchAllTasks(domain, auth) {
   await jiraGet(base + '/rest/api/3/myself', auth);
 
   var jql = 'assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC';
-  var url = base + '/rest/api/3/search/jql'
-    + '?jql=' + encodeURIComponent(jql)
-    + '&maxResults=100'
-    + '&fields=summary,status,priority,issuetype,project';
+  var taskPageSize = 100, taskStart = 0, allIssues = [], taskTotal = Infinity;
+  while (taskStart < taskTotal) {
+    var taskUrl = base + '/rest/api/3/search/jql'
+      + '?jql=' + encodeURIComponent(jql)
+      + '&maxResults=' + taskPageSize
+      + '&startAt=' + taskStart
+      + '&fields=summary,status,priority,issuetype,project';
+    var data = await jiraGet(taskUrl, auth);
+    var page = data.issues || [];
+    allIssues = allIssues.concat(page);
+    taskTotal = typeof data.total === 'number' ? data.total : allIssues.length;
+    taskStart += page.length;
+    if (!page.length) break;
+  }
 
-  var data = await jiraGet(url, auth);
-
-  var tasks = (data.issues || []).map(function(issue) {
+  var tasks = allIssues.map(function(issue) {
     return {
       key: issue.key,
       summary: issue.fields.summary || '(no title)',
@@ -109,12 +117,21 @@ async function fetchAllTasks(domain, auth) {
     projectMap[t.projectKey].count++;
   });
 
-  // Fetch all accessible projects and merge in any not already in the map
+  // Fetch ALL accessible projects via pagination and merge into the map
   try {
-    var allProjects = await jiraGet(base + '/rest/api/3/project/search?maxResults=100&orderBy=name', auth);
-    (allProjects.values || []).forEach(function(p) {
-      if (!projectMap[p.key]) projectMap[p.key] = { key: p.key, name: p.name, count: 0 };
-    });
+    var startAt = 0, pageSize = 50, isLast = false;
+    while (!isLast) {
+      var page = await jiraGet(
+        base + '/rest/api/3/project/search?maxResults=' + pageSize + '&startAt=' + startAt + '&orderBy=name',
+        auth
+      );
+      (page.values || []).forEach(function(p) {
+        if (!projectMap[p.key]) projectMap[p.key] = { key: p.key, name: p.name, count: 0 };
+      });
+      isLast = page.isLast !== false ? true : (page.values || []).length < pageSize;
+      startAt += (page.values || []).length;
+      if (!(page.values || []).length) break;
+    }
   } catch(_) {}
 
   var projects = Object.values(projectMap).sort(function(a, b) {

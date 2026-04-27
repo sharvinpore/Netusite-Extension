@@ -1,3 +1,21 @@
+// ── Token obfuscation (XOR + base64) — not cryptographic, prevents plaintext storage ──
+var _OBF = 'jira-ext-softype-2024';
+function _obf(str) {
+  var out = '';
+  for (var i = 0; i < str.length; i++)
+    out += String.fromCharCode(str.charCodeAt(i) ^ _OBF.charCodeAt(i % _OBF.length));
+  return btoa(unescape(encodeURIComponent(out)));
+}
+function _dob(str) {
+  try {
+    var raw = decodeURIComponent(escape(atob(str)));
+    var out = '';
+    for (var i = 0; i < raw.length; i++)
+      out += String.fromCharCode(raw.charCodeAt(i) ^ _OBF.charCodeAt(i % _OBF.length));
+    return out;
+  } catch(_) { return str; }
+}
+
 // ── State ──────────────────────────────────────────────────────────────────
 var state = {
   config: null, projects: [], tasks: [],
@@ -98,7 +116,7 @@ function renderSetup(errorMsg) {
   content.innerHTML =
     '<div class="settings-panel">' +
       '<div style="padding:2px 0 8px"><div style="font-size:15px;font-weight:800;margin-bottom:4px">Connect to Jira</div>' +
-      '<div style="font-size:11px;color:var(--muted);line-height:1.6">Stored locally in Chrome only.</div></div>' +
+      '<div style="font-size:11px;color:var(--muted);line-height:1.6">Stored locally in Chrome only — never sent to third parties. <a href="#" id="ppLink" style="color:var(--accent);text-decoration:none">Privacy&nbsp;Policy</a></div></div>' +
       '<div class="field-group"><div class="field-label">Jira Domain</div>' +
         '<input class="field-input" id="inp-domain" placeholder="yourcompany.atlassian.net" />' +
         '<div class="field-hint">Must end in .atlassian.net</div></div>' +
@@ -111,6 +129,8 @@ function renderSetup(errorMsg) {
       '<button class="btn-primary" id="saveBtn">Connect &amp; Load Tasks</button>' +
     '</div>';
   $('tokenLink').addEventListener('click', function(e) { e.preventDefault(); chrome.tabs.create({ url: 'https://id.atlassian.com/manage-profile/security/api-tokens' }); });
+  var ppEl = $('ppLink');
+  if (ppEl) ppEl.addEventListener('click', function(e) { e.preventDefault(); chrome.tabs.create({ url: chrome.runtime.getURL('privacy_policy.html') }); });
   $('saveBtn').addEventListener('click', saveConfig);
 }
 
@@ -462,11 +482,14 @@ function renderSettings() {
     '<div class="field-group"><div class="field-label">API Token</div>' +
       '<input class="field-input" id="inp-token" type="password" placeholder="Leave blank to keep existing" /></div>' +
     '<div id="setup-error"></div>' +
-    '<button class="btn-primary" id="saveBtn">Save &amp; Reconnect</button>';
+    '<button class="btn-primary" id="saveBtn">Save &amp; Reconnect</button>' +
+    '<div style="font-size:10px;color:var(--muted);text-align:center;margin-top:4px">Credentials stored locally only. <a href="#" id="ppLink2" style="color:var(--accent);text-decoration:none">Privacy Policy</a></div>';
   if (state.config) html += '<button class="icon-btn" id="cancelBtn" style="width:100%;height:32px;font-size:12px;margin-top:-4px">&#8592; Back</button>';
   html += '</div>';
   content.innerHTML = html;
   $('saveBtn').addEventListener('click', saveConfig);
+  var ppEl2 = $('ppLink2');
+  if (ppEl2) ppEl2.addEventListener('click', function(e) { e.preventDefault(); chrome.tabs.create({ url: chrome.runtime.getURL('privacy_policy.html') }); });
   var cb = $('cancelBtn');
   if (cb) cb.addEventListener('click', function() { if (state.selectedProject) renderTasks(state.selectedProject); else renderProjects(); });
 }
@@ -509,7 +532,7 @@ function saveConfig() {
   if (!token) { if (errEl) errEl.innerHTML = '<div class="error-banner">API token is required.</div>'; return; }
   var config = { domain: domain, email: email, token: token };
   state.config = config;
-  chrome.storage.local.set({ jiraConfig: config });
+  chrome.storage.local.set({ jiraConfig: { domain: domain, email: email, token: _obf(token), _tv: 2 } });
   loadTasks(config);
 }
 
@@ -678,7 +701,9 @@ $('bc-project').addEventListener('click', function() { if (state.selectedProject
 chrome.storage.local.get(['jiraConfig','cachedTasks','cachedProjects','lastSync','pinnedProjects'], function(result) {
   state.pinnedProjects = result.pinnedProjects || [];
   if (result.jiraConfig) {
-    state.config = result.jiraConfig;
+    var raw = result.jiraConfig;
+    var tok = raw._tv === 2 ? _dob(raw.token) : raw.token; // backwards-compat for old plaintext tokens
+    state.config = { domain: raw.domain, email: raw.email, token: tok };
     if (result.cachedProjects && result.cachedProjects.length) {
       state.tasks = result.cachedTasks || []; state.projects = result.cachedProjects || [];
       state.lastSync = result.lastSync || ''; renderProjects();

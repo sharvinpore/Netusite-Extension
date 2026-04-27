@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — BoardSide</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #FDF7F4; --accent: #E56B1E; --text: #1f1008; --muted: #9b6b4a;
+      --border: #ECC9B0; --surface: #fff;
+    }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, 'Segoe UI', system-ui, sans-serif; padding: 40px 20px; }
+    .wrap { max-width: 640px; margin: 0 auto; }
+    .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 32px; }
+    .logo-icon { width: 32px; height: 32px; background: linear-gradient(135deg, #E56B1E, #EC8D54); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+    .logo-name { font-size: 18px; font-weight: 800; }
+    h1 { font-size: 22px; font-weight: 800; margin-bottom: 6px; }
+    .updated { font-size: 12px; color: var(--muted); margin-bottom: 28px; }
+    h2 { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--accent); margin: 24px 0 8px; }
+    p { font-size: 14px; line-height: 1.7; color: #3a2010; margin-bottom: 10px; }
+    ul { padding-left: 18px; margin-bottom: 10px; }
+    li { font-size: 14px; line-height: 1.7; color: #3a2010; margin-bottom: 4px; }
+    .highlight { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 10px; }
+    .contact { margin-top: 32px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 20px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo">
+      <div class="logo-icon">&#11041;</div>
+      <span class="logo-name">BoardSide</span>
+    </div>
+
+    <h1>BoardSide — Privacy Policy</h1>
+    <div class="updated">Effective date: April 27, 2026</div>
+
+    <div class="highlight">
+      <p><strong>Short version:</strong> This extension stores your Jira credentials (domain, email, and API token) exclusively in your local browser using Chrome's built-in storage. No data is ever transmitted to any server other than your own Atlassian instance.</p>
+    </div>
+
+    <h2>What data we collect</h2>
+    <p>The extension stores the following data locally on your device:</p>
+    <ul>
+      <li><strong>Jira domain</strong> — e.g. <code>yourcompany.atlassian.net</code></li>
+      <li><strong>Email address</strong> — used to authenticate with the Jira API</li>
+      <li><strong>Atlassian API token</strong> — used to authenticate API requests; stored in obfuscated form</li>
+      <li><strong>Cached task data</strong> — project and issue information fetched from your Jira instance, stored locally to support offline viewing</li>
+      <li><strong>UI preferences</strong> — pinned projects and last sync time</li>
+    </ul>
+
+    <h2>How your data is stored</h2>
+    <p>All data is stored exclusively in <code>chrome.storage.local</code>, which is sandboxed to your Chrome profile on your device. Your API token is stored in obfuscated (non-plaintext) form. No data is written to any external database, server, or cloud service operated by this extension.</p>
+
+    <h2>How your data is used</h2>
+    <p>Your credentials are used solely to make authenticated requests to the Atlassian REST API at the domain you provide. Specifically:</p>
+    <ul>
+      <li>Fetch Jira issues assigned to you or unassigned within your projects</li>
+      <li>Fetch issue details, comments, and worklogs</li>
+      <li>Submit worklog entries on your behalf</li>
+    </ul>
+    <p>No requests are made to any server other than <code>https://&lt;your-domain&gt;.atlassian.net</code>.</p>
+
+    <h2>Data sharing</h2>
+    <p>We do not share, sell, rent, or transmit your data to any third party. The extension has no analytics, telemetry, or remote logging of any kind.</p>
+
+    <h2>Data retention &amp; deletion</h2>
+    <p>All stored data can be removed at any time by opening the extension's Settings panel and clearing your credentials, or by uninstalling the extension. Uninstalling Chrome or clearing extension data in Chrome settings will also erase all stored data.</p>
+
+    <h2>Permissions used</h2>
+    <ul>
+      <li><strong>storage</strong> — to save credentials and cached tasks locally</li>
+      <li><strong>tabs</strong> — to open the Jira issue URL or API token page in a new tab</li>
+      <li><strong>host_permissions (*.atlassian.net)</strong> — to make authenticated API calls to your Jira instance from the background service worker, bypassing browser CORS restrictions</li>
+    </ul>
+
+    <h2>Changes to this policy</h2>
+    <p>If this policy changes materially, the effective date above will be updated. Continued use of the extension after any update constitutes acceptance of the revised policy.</p>
+
+    <div class="contact">
+      <p>Questions? Contact the developer via the Chrome Web Store listing page.</p>
+    </div>
+  </div>
+</body>
+</html>
